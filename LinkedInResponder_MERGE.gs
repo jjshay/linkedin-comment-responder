@@ -218,18 +218,73 @@ function LR_fetchMyPosts() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// PHANTOMBUSTER API HELPER
+// ══════════════════════════════════════════════════════════════════════════════
+
+function LR_getPhantomOutput(agentId) {
+  // Use existing PHANTOM config from your script, or fallback to Script Properties
+  const apiKey = (typeof PHANTOM !== 'undefined' && PHANTOM.apiKey)
+    ? PHANTOM.apiKey
+    : PropertiesService.getScriptProperties().getProperty('PHANTOMBUSTER_API_KEY');
+
+  if (!apiKey) {
+    Logger.log('PhantomBuster API key not found');
+    return null;
+  }
+
+  const response = UrlFetchApp.fetch(`https://api.phantombuster.com/api/v2/agents/fetch-output?id=${agentId}`, {
+    method: 'GET',
+    headers: { 'X-Phantombuster-Key': apiKey },
+    muteHttpExceptions: true
+  });
+
+  if (response.getResponseCode() === 200) {
+    return JSON.parse(response.getContentText());
+  }
+  Logger.log('PhantomBuster error: ' + response.getContentText());
+  return null;
+}
+
+function LR_launchPhantom(agentId, postUrls) {
+  const apiKey = (typeof PHANTOM !== 'undefined' && PHANTOM.apiKey)
+    ? PHANTOM.apiKey
+    : PropertiesService.getScriptProperties().getProperty('PHANTOMBUSTER_API_KEY');
+
+  if (!apiKey) return null;
+
+  const response = UrlFetchApp.fetch('https://api.phantombuster.com/api/v2/agents/launch', {
+    method: 'POST',
+    headers: {
+      'X-Phantombuster-Key': apiKey,
+      'Content-Type': 'application/json'
+    },
+    payload: JSON.stringify({
+      id: agentId,
+      argument: { spreadsheetUrl: postUrls }
+    }),
+    muteHttpExceptions: true
+  });
+
+  return response.getResponseCode() === 200;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 2. PROCESS COMMENTS (from PhantomBuster or manual entry)
 // ══════════════════════════════════════════════════════════════════════════════
 
 function LR_processComments() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  // Check for PhantomBuster API key
+  const hasPhantom = (typeof PHANTOM !== 'undefined' && PHANTOM.apiKey) ||
+    PropertiesService.getScriptProperties().getProperty('PHANTOMBUSTER_API_KEY');
+
   // Try to get PhantomBuster results if configured
-  if (LR_CONFIG.phantomCommenterAgentId && PHANTOM && PHANTOM.apiKey) {
+  if (LR_CONFIG.phantomCommenterAgentId && hasPhantom) {
     ss.toast('📥 Fetching PhantomBuster results...', 'LinkedIn Responder', 2);
 
     try {
-      const output = getPhantomOutput(LR_CONFIG.phantomCommenterAgentId);
+      const output = LR_getPhantomOutput(LR_CONFIG.phantomCommenterAgentId);
 
       if (output && output.data && output.data.resultObject) {
         let results = JSON.parse(output.data.resultObject);
